@@ -32,6 +32,7 @@ import type { NewTabAgentMenuRow } from '../../../../shared/agent-launch/picker/
 import { useNewTabAgentMenuRows, type NewTabAgentMenuModel } from './use-new-tab-agent-menu-rows'
 import { useAgentDetectionTargetForWorktree } from '@/hooks/useAgentDetectionTarget'
 import { chatUnavailableLabel, rowTitle, rowLabel, rowId } from './tab-agent-row-presentation'
+import { useFreestyleCloudThreadLaunch } from './freestyle-cloud-thread-composer'
 
 export type QuickLaunchAgentMenuItemsProps = {
   worktreeId: string
@@ -56,10 +57,6 @@ const ROW_NAVIGATION_KEYS = new Set(['ArrowLeft', 'ArrowUp', 'ArrowDown', 'Home'
 
 const PLACEHOLDER_WIDTHS = ['w-3/5', 'w-1/2', 'w-2/3', 'w-2/5', 'w-3/4', 'w-1/3', 'w-4/5', 'w-1/4']
 
-function getCatalogEntry(agent: TuiAgent): { id: TuiAgent; label: string } | null {
-  return getAgentCatalog().find((a) => a.id === agent) ?? null
-}
-
 export function useTabAgentMenuLaunch({
   worktreeId,
   groupId,
@@ -83,8 +80,7 @@ export function useTabAgentMenuLaunch({
         return false
       }
       const { agent } = row
-      const entry = getCatalogEntry(agent)
-      const label = entry?.label ?? agent
+      const label = getAgentCatalog().find((entry) => entry.id === agent)?.label ?? agent
       const result = launchAgentInNewTab({
         requestId: newAgentLaunchRequestId(),
         focusIntent: captureNativeChatComposerFocusIntent(),
@@ -170,7 +166,12 @@ export function useTabAgentMenuLaunch({
     ]
   )
 
-  return runLaunch
+  return useFreestyleCloudThreadLaunch(
+    worktreeId,
+    prompt,
+    Boolean(disabled || onPromptHandedOff),
+    runLaunch
+  )
 }
 
 function QuickLaunchAgentMenuItemsInner(props: QuickLaunchAgentMenuItemsProps): React.JSX.Element {
@@ -272,7 +273,7 @@ export function ProjectedAgentMenuItems({
       ) : (
         rows.map((row, index) => {
           const { agent } = row
-          const label = getCatalogEntry(agent)?.label ?? agent
+          const label = getAgentCatalog().find((entry) => entry.id === agent)?.label ?? agent
           // Chat rows come first; the rows that open a terminal start their own group.
           const startsCliGroup = row.kind === 'cli' && index > 0 && rows[index - 1]?.kind !== 'cli'
           if (row.kind === 'chat-unavailable') {

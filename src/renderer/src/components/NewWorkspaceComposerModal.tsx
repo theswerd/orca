@@ -58,6 +58,7 @@ type ComposerModalData = {
   prefilledName?: string
   initialRepoId?: string
   initialEphemeralVmRecipeId?: string
+  cloudThreadDraft?: { agent: TuiAgent; surface: AgentLaunchSurface; prompt?: string }
   initialProjectGroupId?: string
   linkedWorkItem?: LinkedWorkItemSummary | null
   initialGitHubWorkItem?: GitHubWorkItem | null
@@ -157,8 +158,7 @@ function QuickTabBody({
     selectAddedProjectGroup
   } = useComposerState({
     initialName: modalData.prefilledName ?? '',
-    // Quick create ignores legacy prompt-prefill payloads.
-    initialPrompt: '',
+    initialPrompt: modalData.cloudThreadDraft?.prompt ?? '',
     initialLinkedWorkItem: modalData.linkedWorkItem ?? null,
     initialGitHubWorkItem: modalData.initialGitHubWorkItem ?? null,
     initialTaskSourceContext: modalData.taskSourceContext ?? null,
@@ -175,12 +175,10 @@ function QuickTabBody({
     ...(modalData.telemetrySource ? { telemetrySource: modalData.telemetrySource } : {}),
     enableIssueAutomation: modalData.enableIssueAutomation === true
   })
-  // Layer agent settings over the composer so edits retain the typed workspace/repo selection.
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false)
   const agentSettingsInvoker = useRef<HTMLButtonElement | null>(null)
-  // User picks outrank newly detected preferences. Derive from an override so detection stays current without an effect-driven extra commit.
   const [quickAgentOverride, setQuickAgentOverride] = useState<TuiAgent | null | undefined>(
-    undefined
+    modalData.cloudThreadDraft?.agent
   )
   // The picker rows' workspace when known, so the offered list and the rows read one host.
   const launchWorkspace =
@@ -221,7 +219,7 @@ function QuickTabBody({
     draft?: AgentPickerDraft
     entry?: AgentPickerEntry
     contextKey?: string
-  }>({ agent: null })
+  }>(modalData.cloudThreadDraft ?? { agent: null })
   const observation = useAgentMenuObservation(
     cardProps.agentRows?.target ?? null,
     active && Boolean(cardProps.agentRows),
@@ -234,7 +232,8 @@ function QuickTabBody({
       : undefined
   const quickAgentSurface = quickAgentPick.agent === quickAgent ? quickAgentPick.surface : undefined
   const launchSelection = observation.selectionFor(quickAgent, quickAgentSurface)
-  const createDisabled = formDisabled || !launchSelection.ready
+  const cloudRecipeMissing = !!modalData.cloudThreadDraft && !cardProps.selectedEphemeralVmRecipeId
+  const createDisabled = formDisabled || !launchSelection.ready || cloudRecipeMissing
 
   const handleQuickAgentChange = useCallback(
     (

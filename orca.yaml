@@ -2,3 +2,13 @@ scripts:
   setup: |
     node config/scripts/development/setup/run-internal-dev-setup.mjs
     pnpm install
+
+environmentRecipes:
+  - id: freestyle-cloud-thread
+    name: Orca Cloud (Freestyle)
+    description: Start this thread in its own VM in your Freestyle resource pool.
+    checkoutMode: orca-worktree
+    create: node config/scripts/freestyle-cloud/cli.mjs create
+    suspend: node config/scripts/freestyle-cloud/cli.mjs suspend
+    resume: node config/scripts/freestyle-cloud/cli.mjs resume
+    destroy: node config/scripts/freestyle-cloud/cli.mjs destroy
