@@ -146,7 +146,7 @@ export async function createThread(api, config, signal) {
         },
         command: [
           'command -v orca-ide >/dev/null',
-          'git clone --filter=blob:none --no-tags -- "$ORCA_PROJECT_URL" "$ORCA_PROJECT_ROOT" >&2',
+          'git clone --filter=blob:none -- "$ORCA_PROJECT_URL" "$ORCA_PROJECT_ROOT" >&2',
           'exec orca-ide serve --bind 0.0.0.0 --port "$ORCA_PORT" --project-root "$ORCA_PROJECT_ROOT" --pairing-address "$ORCA_PAIRING_ADDRESS" --recipe-json 2>"$HOME/.orca-cloud-serve.log"'
         ].join(' && ')
       }

@@ -15,7 +15,7 @@ const { connectRuntimeOwnedSshTargetMock, getPathMock, handleMock, removeHandler
 )
 
 vi.mock('electron', () => ({
-  app: { getPath: getPathMock },
+  app: { getPath: getPathMock, getAppPath: () => process.cwd() },
   ipcMain: { handle: handleMock, removeHandler: removeHandlerMock }
 }))
 

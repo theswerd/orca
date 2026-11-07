@@ -1,6 +1,6 @@
 # Orca Cloud with Freestyle resource pools
 
-Choose **Orca Cloud (Freestyle)** under **Run on** in the new workspace composer. Each cloud thread is an Orca workspace on its own VM. Starting another agent from the tab bar of a cloud workspace opens the composer with the same cloud recipe. Reopen a thread to return to its existing VM. **Sleep** pauses the VM, **Wake** resumes it, and deleting the workspace removes its VM and ingress rule.
+Choose **Orca Cloud** under **Run on** in the new workspace composer. Each cloud thread is an Orca workspace on its own VM. Starting another agent from the tab bar of a cloud workspace opens the composer with the same cloud recipe. Reopen a thread to return to its existing VM. **Sleep** pauses the VM, **Wake** resumes it, and deleting the workspace removes its VM and ingress rule.
 
 All thread VMs clone the same prepared snapshot and share a single Freestyle resource pool. The recipe has no VM count limit of its own. Freestyle still enforces VM counts, admission floors and the pool's CPU, resident memory and storage budgets. The experimental pool and its file system live on one manager.
 
@@ -38,9 +38,9 @@ Doctor checks that the API key can read the configured pool and snapshot. A live
 
 ## Demo
 
-1. Add this primary checkout as a project in an Orca build from this branch. Enable **Cloud VM** in **Settings → Experimental**. The composer reads recipes from the project's primary checkout.
-2. Create two workspaces with **Run on → Orca Cloud (Freestyle)** and start an agent in each. The setup log shows the distinct VM IDs and their common pool ID.
+1. Add a local Git project in an Orca build from this branch and enable **Cloud VM** in **Settings → Experimental**.
+2. Create two workspaces with **Run on → Orca Cloud** and start an agent in each. The setup log shows the distinct VM IDs and their common pool ID.
 3. Write a file outside the repo in one thread's terminal and check that the other thread cannot see it. Sleep and wake the first workspace, then check its file and agent state.
 4. Delete both workspaces. Keep the shared pool and snapshot to start more threads. To retire the pool, delete its template snapshot and bootstrap VM as well, then run `node config/scripts/freestyle-cloud/cli.mjs pool-delete POOL_ID`.
 
-For a different repository, add the `environmentRecipes` entry and this script directory to its primary checkout. The guest clones the repository's published HTTPS origin. Local unpushed commits and desktop agent logins stay local.
+Orca Cloud is a built-in run target for local Git projects. The guest clones the repository's published HTTPS origin. Local unpushed commits and desktop agent logins stay local.

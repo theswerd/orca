@@ -31,7 +31,8 @@ const {
 
 vi.mock('electron', () => ({
   app: {
-    getPath: getPathMock
+    getPath: getPathMock,
+    getAppPath: () => process.cwd()
   },
   ipcMain: {
     handle: handleMock,
@@ -142,6 +143,18 @@ describe('registerEphemeralVmHandlers', () => {
     if (originalPlatform) {
       Object.defineProperty(process, 'platform', originalPlatform)
     }
+  })
+
+  it('offers Orca Cloud in a Git project without an orca.yaml recipe', async () => {
+    const repoPath = makeDir('orca-cloud-source-')
+    registerEphemeralVmHandlers(makeStore(repoPath) as never)
+    const result = await handlers.get('ephemeralVm:listRecipes')!(null, {
+      repoId: 'repo-1'
+    } as never)
+    expect(result).toMatchObject({
+      status: 'ok',
+      recipes: [{ id: 'freestyle-cloud-thread', name: 'Orca Cloud', checkoutMode: 'orca-worktree' }]
+    })
   })
 
   it('uses an immutable plugin recipe snapshot after the plugin is removed', async () => {

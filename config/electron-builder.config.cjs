@@ -169,7 +169,12 @@ const commonExtraResources = [
   skillFreshnessResources,
   ...agentBrowserSkillResources,
   nativeChatVisualsResource,
-  emojiShortcodeDatasetResource
+  emojiShortcodeDatasetResource,
+  {
+    from: 'config/scripts/freestyle-cloud',
+    to: 'freestyle-cloud',
+    filter: ['*.mjs', '!*.test.mjs']
+  }
 ]
 // Native speech addons need real disk paths; copy only the artifact target’s variant.
 const macSpeechNativeResource = {

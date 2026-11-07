@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { prepareEphemeralVmWorkspaceTarget } from '@/lib/ephemeral-vm-workspace-target'
 import type { WorktreeCreationRequest } from '@/lib/workspace/creation/pending-worktree-creation'
+import { FREESTYLE_CLOUD_RECIPE_ID } from '../../../shared/freestyle-cloud-recipe'
 import { getProjectIdentityKey } from '../../../shared/project-host-setup-projection'
 import type { Repo } from '../../../shared/repo-types'
 import { translate } from '@/i18n/i18n'
@@ -124,6 +125,7 @@ function getEphemeralVmPortableBaseSelection(
   request: WorktreeCreationRequest
 ): Pick<WorktreeCreationRequest, 'baseBranch' | 'compareBaseRef'> {
   const keepBaseBranch =
+    request.ephemeralVmRecipe?.recipeId === FREESTYLE_CLOUD_RECIPE_ID ||
     request.linkedPR !== undefined ||
     request.linkedGitLabMR !== undefined ||
     request.linkedBitbucketPR !== undefined ||

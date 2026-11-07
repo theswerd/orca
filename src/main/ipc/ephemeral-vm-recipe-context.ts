@@ -4,6 +4,7 @@ import type { EphemeralVmRecipeDoctorResult } from '../../shared/ephemeral-vm-re
 import { listEphemeralVmRuntimes } from '../../shared/ephemeral-vm-runtime-store'
 import type { EphemeralVmRuntimeRecord } from '../../shared/ephemeral-vm-runtimes'
 import { isFolderRepo, isGitRepoKind } from '../../shared/repo-kind'
+import { FREESTYLE_CLOUD_RECIPE_ID } from '../../shared/freestyle-cloud-recipe'
 import type { OrcaVmRecipe } from '../../shared/orca-yaml-hook-types'
 import {
   EphemeralVmFailureError,
@@ -41,7 +42,7 @@ export type RecipeRepoResult =
 export function listRecipes(
   store: Store,
   repoId: string,
-  pluginRecipes: readonly OrcaVmRecipe[] = []
+  desktopRecipes: readonly OrcaVmRecipe[] = []
 ): EphemeralVmRecipeListResult {
   const repo = store.getRepo(repoId)
   if (!repo || isFolderRepo(repo)) {
@@ -54,14 +55,14 @@ export function listRecipes(
   return {
     status: 'ok',
     repoPath: repo.path,
-    recipes: combineEphemeralVmRecipes(hooks?.environmentRecipes ?? [], pluginRecipes),
+    recipes: combineEphemeralVmRecipes(hooks?.environmentRecipes ?? [], desktopRecipes),
     diagnostics: hooks?.environmentRecipeDiagnostics ?? []
   }
 }
 
 export function listRecipeCatalog(
   store: Store,
-  pluginRecipes: readonly OrcaVmRecipe[] = []
+  desktopRecipes: readonly OrcaVmRecipe[] = []
 ): EphemeralVmRecipeCatalogEntry[] {
   return store
     .getRepos()
@@ -72,7 +73,7 @@ export function listRecipeCatalog(
         repoId: repo.id,
         repoName: repo.displayName,
         repoPath: repo.path,
-        recipes: combineEphemeralVmRecipes(hooks?.environmentRecipes ?? [], pluginRecipes),
+        recipes: combineEphemeralVmRecipes(hooks?.environmentRecipes ?? [], desktopRecipes),
         diagnostics: hooks?.environmentRecipeDiagnostics ?? []
       }
     })
@@ -127,23 +128,26 @@ export function getRuntimeRecipeContext(
 export function resolveRecipeForRepo(
   repoPath: string,
   recipeId: string,
-  pluginRecipes: readonly OrcaVmRecipe[] = []
+  desktopRecipes: readonly OrcaVmRecipe[] = []
 ): OrcaVmRecipe | null {
   return (
-    combineEphemeralVmRecipes(loadHooks(repoPath)?.environmentRecipes ?? [], pluginRecipes).find(
+    combineEphemeralVmRecipes(loadHooks(repoPath)?.environmentRecipes ?? [], desktopRecipes).find(
       (recipe) => recipe.id === recipeId
     ) ?? null
   )
 }
 
-/** Project-owned recipes are authoritative for their repository and shadow
- * same-id global plugin recipes without disabling the rest of the pack. */
+/** Keep the built-in cloud action bound to the app's recipe. Other project recipes can shadow plugins. */
 export function combineEphemeralVmRecipes(
   repoRecipes: readonly OrcaVmRecipe[],
-  pluginRecipes: readonly OrcaVmRecipe[]
+  desktopRecipes: readonly OrcaVmRecipe[]
 ): OrcaVmRecipe[] {
-  const repoIds = new Set(repoRecipes.map((recipe) => recipe.id))
-  return [...repoRecipes, ...pluginRecipes.filter((recipe) => !repoIds.has(recipe.id))]
+  const cloudRecipe = desktopRecipes.find((recipe) => recipe.id === FREESTYLE_CLOUD_RECIPE_ID)
+  const projectRecipes = cloudRecipe
+    ? repoRecipes.filter((recipe) => recipe.id !== cloudRecipe.id)
+    : repoRecipes
+  const repoIds = new Set(projectRecipes.map((recipe) => recipe.id))
+  return [...projectRecipes, ...desktopRecipes.filter((recipe) => !repoIds.has(recipe.id))]
 }
 
 function failedRecipeRepo(repoPath: string | null, failure: EphemeralVmFailure): RecipeRepoResult {

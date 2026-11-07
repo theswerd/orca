@@ -5,7 +5,7 @@ scripts:
 
 environmentRecipes:
   - id: freestyle-cloud-thread
-    name: Orca Cloud (Freestyle)
+    name: Orca Cloud
     description: Start this thread in its own VM in your Freestyle resource pool.
     checkoutMode: orca-worktree
     create: node config/scripts/freestyle-cloud/cli.mjs create

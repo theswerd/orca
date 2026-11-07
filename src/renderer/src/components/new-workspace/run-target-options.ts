@@ -1,3 +1,4 @@
+import { FREESTYLE_CLOUD_RECIPE_ID } from '../../../../shared/freestyle-cloud-recipe'
 import type { OrcaHooks } from '../../../../shared/orca-yaml-hook-types'
 import {
   getProjectHostSetupSelectionKey,
@@ -13,10 +14,11 @@ export type EphemeralVmRecipeOption = NonNullable<OrcaHooks['environmentRecipes'
 export const RUN_TARGET_ADD_HOST_KEY = 'add-host'
 export const RUN_TARGET_RECIPES_KEY = 'per-workspace-env'
 
-/** A row in the run-target list. Hosts commit; the last two open a submenu. */
+/** Hosts and Orca Cloud commit directly. The other recipes and Add host open submenus. */
 export type RunTargetRowModel =
   | { key: string; kind: 'ready'; option: ReadyProjectHostSetupOption }
   | { key: string; kind: 'needs-setup'; option: NeedsSetupProjectHostOption }
+  | { key: typeof FREESTYLE_CLOUD_RECIPE_ID; kind: 'cloud'; recipe: EphemeralVmRecipeOption }
   | { key: typeof RUN_TARGET_RECIPES_KEY; kind: 'recipes' }
   | { key: typeof RUN_TARGET_ADD_HOST_KEY; kind: 'add-host' }
 
@@ -47,6 +49,9 @@ export function getRecipeDestroyLabel(recipe: EphemeralVmRecipeOption): string {
 }
 
 export function getRecipeDetail(recipe: EphemeralVmRecipeOption): string {
+  if (recipe.id === FREESTYLE_CLOUD_RECIPE_ID) {
+    return translate('components.newWorkspace.orcaCloudDetail', 'A fresh VM for this worktree')
+  }
   return `${getRecipeCommandDisplay(recipe.create)} · ${getRecipeDestroyLabel(recipe)}`
 }
 
@@ -141,11 +146,14 @@ export function buildRunTargetRows({
   hiddenHostCount: number
 } {
   const trimmed = query.trim().toLowerCase()
-  const matchedRecipes = matchRecipes(recipes, trimmed)
+  const matchingRecipes = matchRecipes(recipes, trimmed)
+  const cloudRecipe = matchingRecipes.find((recipe) => recipe.id === FREESTYLE_CLOUD_RECIPE_ID)
+  const matchedRecipes = matchingRecipes.filter((recipe) => recipe.id !== FREESTYLE_CLOUD_RECIPE_ID)
   const hostRows = buildHostRows(hostOptions, trimmed)
-  const rows: RunTargetRowModel[] = [
-    ...hostRows.rows,
-    ...buildSubmenuRows(matchedRecipes.length > 0, hasAddHost)
-  ]
+  const rows = hostRows.rows
+  if (cloudRecipe) {
+    rows.unshift({ key: FREESTYLE_CLOUD_RECIPE_ID, kind: 'cloud', recipe: cloudRecipe })
+  }
+  rows.push(...buildSubmenuRows(matchedRecipes.length > 0, hasAddHost))
   return { rows, matchedRecipes, hiddenHostCount: hostRows.hiddenHostCount }
 }

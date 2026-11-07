@@ -71,6 +71,24 @@ describe('run target host identity', () => {
     expect(onHostChange).toHaveBeenCalledWith(JSON.stringify(['same-id', 'ssh:builder']))
   })
 
+  it('offers Orca Cloud first and selects it directly', () => {
+    const onRecipeChange = vi.fn()
+    render(
+      <RunTargetCombobox
+        hostOptions={options}
+        hostValue="same-id"
+        recipes={[{ id: 'freestyle-cloud-thread', name: 'Orca Cloud', create: 'provision' }]}
+        recipeValue={null}
+        onRecipeChange={onRecipeChange}
+      />
+    )
+
+    const cloud = screen.getByRole('option', { name: /Orca Cloud/ })
+    expect(screen.getAllByRole('option')[0]).toBe(cloud)
+    fireEvent.click(cloud)
+    expect(onRecipeChange).toHaveBeenCalledWith('freestyle-cloud-thread')
+  })
+
   it('shows a merged machine row when the selection names its other host id', () => {
     const serverOption: ReadyProjectHostSetupOption = {
       ...sshOption,

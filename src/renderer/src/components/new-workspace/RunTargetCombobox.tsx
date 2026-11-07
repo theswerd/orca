@@ -8,6 +8,7 @@ import {
   type ProjectHostSetupOption,
   type ReadyProjectHostSetupOption
 } from '@/lib/project-host-setup-options'
+import { FREESTYLE_CLOUD_RECIPE_ID } from '../../../../shared/freestyle-cloud-recipe'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
 import { isWithinComboboxRoot, useTypeAheadCombobox } from './use-type-ahead-combobox'
 import { COMBOBOX_POPOVER_SURFACE } from './type-ahead-combobox-styles'
@@ -158,9 +159,13 @@ export default function RunTargetCombobox({
         setLocation(row.option)
         return
       }
+      if (row.kind === 'cloud') {
+        selectRecipe(row.recipe.id)
+        return
+      }
       setSubmenu(row.kind === 'recipes' ? 'recipes' : 'add-host')
     },
-    [rows, selectHost, setLocation]
+    [rows, selectHost, selectRecipe, setLocation]
   )
 
   const handleKeyDown = useCallback(
@@ -202,7 +207,9 @@ export default function RunTargetCombobox({
   )
 
   const fieldLabel = selectedRecipe
-    ? `${getEphemeralVmLabel()} / ${selectedRecipe.name}`
+    ? selectedRecipe.id === FREESTYLE_CLOUD_RECIPE_ID
+      ? selectedRecipe.name
+      : `${getEphemeralVmLabel()} / ${selectedRecipe.name}`
     : (selectedHost?.label ?? '')
   const fieldDetail = selectedRecipe ? getRecipeDetail(selectedRecipe) : (selectedHost?.path ?? '')
 

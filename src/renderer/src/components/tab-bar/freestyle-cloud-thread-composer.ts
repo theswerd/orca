@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { FREESTYLE_CLOUD_RECIPE_ID } from '../../../../shared/freestyle-cloud-recipe'
 import type {
   AgentPickerDraft,
   AgentPickerEntry
@@ -56,7 +57,7 @@ function openFreestyleCloudThreadComposer(
       const runtime = runtimes.find(
         (entry) =>
           entry.runtimeEnvironmentId === environmentId &&
-          entry.recipeId === 'freestyle-cloud-thread'
+          entry.recipeId === FREESTYLE_CLOUD_RECIPE_ID
       )
       if (!runtime) {
         return false

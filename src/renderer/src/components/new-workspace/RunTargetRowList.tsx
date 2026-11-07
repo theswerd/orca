@@ -1,4 +1,5 @@
 import React from 'react'
+import { Cloud } from 'lucide-react'
 import type {
   NeedsSetupProjectHostOption,
   ReadyProjectHostSetupOption
@@ -6,7 +7,11 @@ import type {
 import { HostRowIcon, RunTargetRow } from './RunTargetComboboxRow'
 import { ConnectHostButton, NeedsSetupHostIcon, SetLocationButton } from './RunTargetRowActions'
 import { RecipesSubmenuRow } from './RunTargetSubmenus'
-import type { EphemeralVmRecipeOption, RunTargetRowModel } from './run-target-options'
+import {
+  getRecipeDetail,
+  type EphemeralVmRecipeOption,
+  type RunTargetRowModel
+} from './run-target-options'
 
 /** The scrolling rows of the run-target picker; "Add host" is pinned outside this list. */
 export default function RunTargetRowList({
@@ -105,6 +110,21 @@ export default function RunTargetRowList({
                   />
                 ) : undefined
               }
+            />
+          )
+        }
+        if (row.kind === 'cloud') {
+          return (
+            <RunTargetRow
+              key={row.key}
+              icon={<Cloud className="size-3.5" />}
+              label={row.recipe.name}
+              detail={getRecipeDetail(row.recipe)}
+              armed={isArmed}
+              current={selectedRecipeId === row.recipe.id}
+              optionId={optionId}
+              onArm={() => onArm(row.key, null)}
+              onCommit={() => onSelectRecipe(row.recipe.id)}
             />
           )
         }

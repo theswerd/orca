@@ -11,7 +11,7 @@ const { getPathMock, handleMock, resolveProvisionedRootSourceMock } = vi.hoisted
 }))
 
 vi.mock('electron', () => ({
-  app: { getPath: getPathMock },
+  app: { getPath: getPathMock, getAppPath: () => process.cwd() },
   ipcMain: { handle: handleMock, removeHandler: vi.fn() }
 }))
 
