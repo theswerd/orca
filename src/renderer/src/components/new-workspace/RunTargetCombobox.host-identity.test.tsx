@@ -71,7 +71,7 @@ describe('run target host identity', () => {
     expect(onHostChange).toHaveBeenCalledWith(JSON.stringify(['same-id', 'ssh:builder']))
   })
 
-  it('offers Orca Cloud first and selects it directly', () => {
+  it('offers Orca Cloud below the local computer and selects it directly', () => {
     const onRecipeChange = vi.fn()
     render(
       <RunTargetCombobox
@@ -84,7 +84,11 @@ describe('run target host identity', () => {
     )
 
     const cloud = screen.getByRole('option', { name: /Orca Cloud/ })
-    expect(screen.getAllByRole('option')[0]).toBe(cloud)
+    expect(screen.getAllByRole('option')).toEqual([
+      screen.getByRole('option', { name: /^Local/ }),
+      cloud,
+      screen.getByRole('option', { name: /^Builder/ })
+    ])
     fireEvent.click(cloud)
     expect(onRecipeChange).toHaveBeenCalledWith('freestyle-cloud-thread')
   })

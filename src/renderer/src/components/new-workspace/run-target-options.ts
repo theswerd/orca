@@ -1,3 +1,4 @@
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import { FREESTYLE_CLOUD_RECIPE_ID } from '../../../../shared/freestyle-cloud-recipe'
 import type { OrcaHooks } from '../../../../shared/orca-yaml-hook-types'
 import {
@@ -152,7 +153,16 @@ export function buildRunTargetRows({
   const hostRows = buildHostRows(hostOptions, trimmed)
   const rows = hostRows.rows
   if (cloudRecipe) {
-    rows.unshift({ key: FREESTYLE_CLOUD_RECIPE_ID, kind: 'cloud', recipe: cloudRecipe })
+    const localRow = rows.findIndex(
+      (row) =>
+        (row.kind === 'ready' || row.kind === 'needs-setup') &&
+        row.option.hostId === LOCAL_EXECUTION_HOST_ID
+    )
+    rows.splice(localRow + 1, 0, {
+      key: FREESTYLE_CLOUD_RECIPE_ID,
+      kind: 'cloud',
+      recipe: cloudRecipe
+    })
   }
   rows.push(...buildSubmenuRows(matchedRecipes.length > 0, hasAddHost))
   return { rows, matchedRecipes, hiddenHostCount: hostRows.hiddenHostCount }
