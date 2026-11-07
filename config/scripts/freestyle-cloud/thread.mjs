@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { text } from 'node:stream/consumers'
 import { deleteIfPresent, execGuest, vmPath, waitForVm } from './api.mjs'
+import { serveOrca } from './orcad-launch.mjs'
 import {
   findProjectSnapshot,
   PROJECT_ROOT,
@@ -137,11 +138,19 @@ export async function createThread(api, config, signal) {
           ? '[ "$(git -C "$ORCA_PROJECT_ROOT" config remote.origin.url)" = "$ORCA_PROJECT_URL" ] || { echo "Project snapshot belongs to a different repository." >&2; exit 1; }'
           : 'git init -q "$ORCA_PROJECT_ROOT" && git -C "$ORCA_PROJECT_ROOT" remote add origin "$ORCA_PROJECT_URL"',
         auth.configure,
-        'git -C "$ORCA_PROJECT_ROOT" fetch -q --prune --no-tags origin >&2',
-        ...(!prepared ? ['git -C "$ORCA_PROJECT_ROOT" remote set-head origin --auto >&2'] : []),
-        'git -C "$ORCA_PROJECT_ROOT" checkout -q --detach refs/remotes/origin/HEAD',
+        'refresh_project() {',
+        '  git -C "$ORCA_PROJECT_ROOT" fetch -q --prune --no-tags origin >&2 &&',
+        ...(!prepared
+          ? ['  git -C "$ORCA_PROJECT_ROOT" remote set-head origin --auto >&2 &&']
+          : []),
+        '  git -C "$ORCA_PROJECT_ROOT" checkout -q --detach refs/remotes/origin/HEAD',
+        '}',
+        ...(prepared ? ['refresh_project &', 'project_refresh_pid=$!'] : ['refresh_project']),
         startDisplay,
-        'orca-ide serve --port "$ORCA_PORT" --project-root "$ORCA_PROJECT_ROOT" --pairing-address "$ORCA_PAIRING_ADDRESS" --recipe-json 2>"$HOME/.orca-cloud-serve.log" || { tail -20 "$HOME/.orca-cloud-serve.log" >&2; exit 1; }'
+        serveOrca,
+        'orca_ready=$(serve_orca) || { tail -20 "$HOME/.orca-cloud-serve.log" >&2; exit 1; }',
+        ...(prepared ? ['wait "$project_refresh_pid"'] : []),
+        'printf "%s\\n" "$orca_ready"'
       ].join('\n')
     })
     if (result.statusCode !== 0) {

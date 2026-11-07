@@ -1,15 +1,17 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, openAsBlob, readFileSync, rmSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deleteIfPresent, execGuest, vmPath, waitForVm } from './api.mjs'
+import { prepareOrcad } from './orcad-launch.mjs'
 
 export const PROJECT_ROOT = '/var/tmp/orca-project'
 export const PUBLIC_EGRESS = {
   rules: [{ action: 'allow', source: {}, destination: { public: true } }]
 }
 
+const PROJECT_SNAPSHOT_VERSION = 3
 const BUNDLE_PATH = '/var/tmp/orca-project.bundle'
 const GITHUB_HOST_KEY =
   'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
@@ -59,15 +61,19 @@ export function projectUrl(config) {
   return url.href
 }
 
-function snapshotSlug(poolId, baseId, url) {
+function snapshotSlug(poolId, baseId, url, version = PROJECT_SNAPSHOT_VERSION) {
   const hash = createHash('sha256')
-    .update(JSON.stringify([2, poolId, baseId, url]))
+    .update(JSON.stringify([version, poolId, baseId, url]))
     .digest('hex')
   return `orca-project-${hash.slice(0, 32)}`
 }
 
 export async function findProjectSnapshot(api, poolId, baseId, url, signal) {
-  const slug = snapshotSlug(poolId, baseId, url)
+  const current = await getProjectSnapshot(api, snapshotSlug(poolId, baseId, url), signal)
+  return current ?? getProjectSnapshot(api, snapshotSlug(poolId, baseId, url, 2), signal)
+}
+
+async function getProjectSnapshot(api, slug, signal) {
   try {
     return await api('GET', `snapshots/${slug}`, { signal })
   } catch (error) {
@@ -86,23 +92,13 @@ export const startDisplay = [
   'fi'
 ].join('\n')
 
-// Populate Orca’s runtime cache without starting a server or generating pairing state.
-const prepareOrcad = [
-  'orca_resources=$(dirname "$(dirname "$(readlink -f "$(command -v orca-ide)")")")',
-  'orca_app="$orca_resources/app.asar"',
-  'orca_entry=out/main/orcad/orcad-local-serve-selection-entry.js',
-  'if [ -f "$orca_resources/app.asar.unpacked/$orca_entry" ]; then',
-  '  ELECTRON_RUN_AS_NODE=1 "$orca_resources/../orca-ide" "$orca_app/$orca_entry" --user-data "${XDG_CONFIG_HOME:-$HOME/.config}/orca" --app-root "$orca_app" >&2',
-  'fi'
-].join('\n')
-
 export async function prepareProject(api, poolId, baseId, url, signal) {
-  const existing = await findProjectSnapshot(api, poolId, baseId, url, signal)
+  const slug = snapshotSlug(poolId, baseId, url)
+  const existing = await getProjectSnapshot(api, slug, signal)
   if (existing) {
     return { poolId, snapshotId: existing.id }
   }
 
-  const slug = snapshotSlug(poolId, baseId, url)
   let branchRef
   try {
     branchRef = localGit(['symbolic-ref', 'refs/remotes/origin/HEAD'])
@@ -114,6 +110,7 @@ export async function prepareProject(api, poolId, baseId, url, signal) {
   const branch = branchRef.replace(/^refs\/remotes\/origin\//, '')
   const scratch = mkdtempSync(join(tmpdir(), 'orca-cloud-project-'))
   let builderId
+  let probeId
   try {
     const bundle = join(scratch, 'project.bundle')
     // Seed only published tracking refs so unpublished local branches stay on the desktop.
@@ -166,16 +163,51 @@ export async function prepareProject(api, poolId, baseId, url, signal) {
     }
     const snapshot = await api('POST', `${vmPath(builderId)}/snapshot`, {
       signal,
-      timeoutMs: 120_000,
-      body: { slug, displayName: `Orca Cloud: ${new URL(url).pathname}` }
+      timeoutMs: 240_000,
+      background: true,
+      body: {
+        slug: `orca-project-candidate-${randomUUID()}`,
+        displayName: `Orca Cloud: ${new URL(url).pathname}`
+      }
     })
-    return { poolId, snapshotId: snapshot.snapshotId }
+    const candidateId = snapshot.snapshotId
+    console.error('Checking that the project snapshot boots before selecting it.')
+    const probe = await api('POST', 'vms', {
+      signal,
+      timeoutMs: 120_000,
+      body: {
+        poolId,
+        snapshotId: candidateId,
+        displayName: 'Orca Cloud project snapshot check',
+        poolLimits: { memoryFloor: 16 },
+        firewall: { rules: [] },
+        ttlSeconds: 600
+      }
+    })
+    probeId = probe.id
+    if (probe.state !== 'running') {
+      await waitForVm(api, probeId, 'running', signal)
+    }
+    const checkout = await execGuest(api, probeId, signal, {
+      env: { ORCA_PROJECT_ROOT: PROJECT_ROOT, ORCA_PROJECT_URL: url },
+      command: '[ "$(git -C "$ORCA_PROJECT_ROOT" config remote.origin.url)" = "$ORCA_PROJECT_URL" ]'
+    })
+    if (checkout.statusCode !== 0) {
+      throw new Error('The cloned project snapshot did not contain the expected checkout.')
+    }
+    await api('PATCH', `snapshots/${encodeURIComponent(candidateId)}`, {
+      signal,
+      body: { slug }
+    })
+    return { poolId, snapshotId: candidateId }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
-    if (builderId) {
-      await deleteIfPresent(api, vmPath(builderId), { timeoutMs: 120_000 }).catch(() =>
-        console.error(`Cleanup could not be confirmed for project snapshot builder ${builderId}.`)
-      )
+    for (const vmId of [probeId, builderId]) {
+      if (vmId) {
+        await deleteIfPresent(api, vmPath(vmId), { timeoutMs: 120_000 }).catch(() =>
+          console.error(`Cleanup could not be confirmed for project preparation VM ${vmId}.`)
+        )
+      }
     }
   }
 }

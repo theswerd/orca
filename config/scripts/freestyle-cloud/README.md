@@ -38,7 +38,7 @@ Doctor checks that the API key can read the configured pool and snapshot. A live
 
 ## Prepare a Git project
 
-Run this once from the project's local checkout after fetching `origin`. The snapshot contains committed origin tracking refs and Orca's runtime cache. Orca picks the snapshot by pool, base image, and Git origin. Each thread forks the snapshot and fetches recent changes before creating its worktree.
+Run this once from the project's local checkout after fetching `origin`. The snapshot contains committed origin tracking refs and Orca's verified runtime and compile cache. Orca picks the snapshot by pool, base image, and Git origin. Each thread forks the snapshot, starts its own Orca server, and fetches recent changes in parallel. The thread can create its worktree once both are ready.
 
 ```sh
 git fetch --prune origin
