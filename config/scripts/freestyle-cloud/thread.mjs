@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, openAsBlob, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { text } from 'node:stream/consumers'
-import { deleteIfPresent, vmPath, waitForVm } from './api.mjs'
+import { deleteIfPresent, execGuest, vmPath, waitForVm } from './api.mjs'
+import {
+  findProjectSnapshot,
+  PROJECT_ROOT,
+  projectAuthentication,
+  projectUrl,
+  PUBLIC_EGRESS,
+  startDisplay
+} from './project.mjs'
 
 const ORCA_PORT = 7331
-const PROJECT_ROOT = '/var/tmp/orca-project'
-const GUEST_BUNDLE_PATH = '/var/tmp/orca-source.bundle'
 const PROVIDER = 'freestyle-resource-pool'
 
 function threadSlug(instanceId) {
@@ -17,30 +19,6 @@ function threadSlug(instanceId) {
   }
   const hash = createHash('sha256').update(instanceId).digest('hex').slice(0, 32)
   return `orca-thread-${hash}`
-}
-
-function repositoryUrl(config) {
-  const source =
-    config.ORCA_REPO_URL ||
-    spawnSync('git', ['remote', 'get-url', 'origin'], {
-      encoding: 'utf8',
-      windowsHide: true
-    }).stdout?.trim() ||
-    ''
-  const ssh = /^git@([\w.-]+):([^\s]+)$/.exec(source)
-  const url = URL.parse(ssh ? `https://${ssh[1]}/${ssh[2]}` : source)
-  if (
-    !url ||
-    url.protocol !== 'https:' ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname === '/'
-  ) {
-    throw new Error('The project needs an HTTPS origin without embedded Git credentials.')
-  }
-  return url.href
 }
 
 function requireId(value, prefix, label) {
@@ -91,12 +69,11 @@ async function deleteThread(api, id, slug, signal) {
 export async function createThread(api, config, signal) {
   const slug = threadSlug(config.ORCA_VM_INSTANCE_ID)
   const poolId = requireId(config.FREESTYLE_ORCA_POOL_ID, 'pool', 'FREESTYLE_ORCA_POOL_ID')
-  const snapshotId = requireId(
-    config.FREESTYLE_ORCA_SNAPSHOT_ID,
-    'sh',
-    'FREESTYLE_ORCA_SNAPSHOT_ID'
-  )
-  const repoUrl = repositoryUrl(config)
+  const baseId = requireId(config.FREESTYLE_ORCA_SNAPSHOT_ID, 'sh', 'FREESTYLE_ORCA_SNAPSHOT_ID')
+  const repoUrl = projectUrl(config)
+  const auth = projectAuthentication(repoUrl)
+  const prepared = await findProjectSnapshot(api, poolId, baseId, repoUrl, signal)
+  const snapshotId = prepared?.id ?? baseId
   const suffix = config.FREESTYLE_ORCA_DOMAIN_SUFFIX || 'style.dev'
   if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(suffix)) {
     throw new Error('Set FREESTYLE_ORCA_DOMAIN_SUFFIX to a DNS suffix without a wildcard.')
@@ -104,7 +81,9 @@ export async function createThread(api, config, signal) {
   const domain = `${slug}.${suffix}`
 
   let vmId
-  console.error(`Creating VM ${slug} in pool ${poolId}.`)
+  console.error(
+    prepared ? 'Starting VM from the project snapshot.' : 'Starting VM from the Orca base image.'
+  )
   try {
     // The snapshot and pool must share the prepared virtiofs lineage. See Freestyle's
     // docs/file-cow-manager-experiment.md. A failed request can still have created the slug.
@@ -118,7 +97,7 @@ export async function createThread(api, config, signal) {
         snapshotId,
         poolLimits: { memoryFloor: 16 },
         metadata: { orcaProvider: PROVIDER },
-        firewall: { rules: [{ action: 'allow', source: {}, destination: { public: true } }] },
+        firewall: PUBLIC_EGRESS,
         tls: {
           rules: [
             {
@@ -133,21 +112,35 @@ export async function createThread(api, config, signal) {
       }
     })
     vmId = requireId(vm.id, 'vm', 'created VM ID')
-    await waitForVm(api, vmId, 'running', signal)
-    await checkoutRepository(api, vmId, repoUrl, signal)
-    console.error(`Starting Orca in ${vmId}.`)
+    if (vm.state !== 'running') {
+      await waitForVm(api, vmId, 'running', signal)
+    }
+    console.error(
+      prepared
+        ? 'Fetching repository updates and starting Orca.'
+        : 'Cloning the project and starting Orca.'
+    )
     const result = await execGuest(api, vmId, signal, {
       env: {
+        ...auth.env,
+        GIT_TERMINAL_PROMPT: '0',
+        ORCA_PROJECT_URL: repoUrl,
         ORCA_PROJECT_ROOT: PROJECT_ROOT,
         ORCA_PAIRING_ADDRESS: `wss://${domain}`,
         ORCA_PORT: String(ORCA_PORT)
       },
       command: [
         'set -eu',
-        'export DISPLAY=:97',
-        'setsid -f Xvfb "$DISPLAY" -nolisten tcp -screen 0 1280x800x24 </dev/null >/var/tmp/orca-xvfb.log 2>&1',
-        'for attempt in $(seq 1 50); do [ -S /tmp/.X11-unix/X97 ] && break; sleep 0.2; done',
-        '[ -S /tmp/.X11-unix/X97 ] || { cat /var/tmp/orca-xvfb.log >&2; exit 1; }',
+        'orca_umask=$(umask)',
+        auth.install,
+        prepared
+          ? '[ "$(git -C "$ORCA_PROJECT_ROOT" config remote.origin.url)" = "$ORCA_PROJECT_URL" ] || { echo "Project snapshot belongs to a different repository." >&2; exit 1; }'
+          : 'git init -q "$ORCA_PROJECT_ROOT" && git -C "$ORCA_PROJECT_ROOT" remote add origin "$ORCA_PROJECT_URL"',
+        auth.configure,
+        'git -C "$ORCA_PROJECT_ROOT" fetch -q --prune --no-tags origin >&2',
+        ...(!prepared ? ['git -C "$ORCA_PROJECT_ROOT" remote set-head origin --auto >&2'] : []),
+        'git -C "$ORCA_PROJECT_ROOT" checkout -q --detach refs/remotes/origin/HEAD',
+        startDisplay,
         'orca-ide serve --port "$ORCA_PORT" --project-root "$ORCA_PROJECT_ROOT" --pairing-address "$ORCA_PAIRING_ADDRESS" --recipe-json 2>"$HOME/.orca-cloud-serve.log" || { tail -20 "$HOME/.orca-cloud-serve.log" >&2; exit 1; }'
       ].join('\n')
     })
@@ -157,7 +150,7 @@ export async function createThread(api, config, signal) {
         .replace(/orca:\/\/\S+/g, '[pairing link]')
         .slice(-1800)
       throw new Error(
-        `Orca server could not start in the guest (exit ${result.statusCode}).${reason ? ` ${reason}` : ''}`
+        `Orca Cloud setup failed in the guest (exit ${result.statusCode}).${reason ? ` ${reason}` : ''}`
       )
     }
     return {
@@ -172,67 +165,6 @@ export async function createThread(api, config, signal) {
       )
     }
     throw error
-  }
-}
-
-async function execGuest(api, vmId, signal, { command, env }) {
-  return api('POST', `${vmPath(vmId)}/exec-await`, {
-    signal,
-    timeoutMs: 210_000,
-    background: true,
-    body: { timeoutMs: 180_000, command, env }
-  })
-}
-
-async function checkoutRepository(api, vmId, repoUrl, signal) {
-  const env = {
-    GIT_TERMINAL_PROMPT: '0',
-    ORCA_PROJECT_URL: repoUrl,
-    ORCA_PROJECT_ROOT: PROJECT_ROOT,
-    ORCA_SOURCE_BUNDLE: GUEST_BUNDLE_PATH
-  }
-  const clone = await execGuest(api, vmId, signal, {
-    env,
-    command: 'git clone --filter=blob:none -- "$ORCA_PROJECT_URL" "$ORCA_PROJECT_ROOT"'
-  })
-  if (clone.statusCode === 0) {
-    return
-  }
-  if (clone.statusCode !== 128) {
-    throw new Error('Git could not clone the repository in the guest.')
-  }
-
-  console.error('The guest could not clone from the Git remote. Sending the local Git checkout.')
-  const scratch = mkdtempSync(join(tmpdir(), 'orca-cloud-git-'))
-  try {
-    const path = join(scratch, 'source.bundle')
-    const bundle = spawnSync(
-      'git',
-      ['bundle', 'create', path, 'HEAD', '--branches', '--tags', '--remotes=origin'],
-      { encoding: 'utf8', timeout: 120_000, windowsHide: true }
-    )
-    if (bundle.status !== 0) {
-      throw new Error('Could not bundle the local Git checkout.')
-    }
-    await api('PUT', `${vmPath(vmId)}/fs/write?path=${encodeURIComponent(GUEST_BUNDLE_PATH)}`, {
-      bytes: await openAsBlob(path),
-      signal,
-      timeoutMs: 180_000
-    })
-    const uploaded = await execGuest(api, vmId, signal, {
-      env,
-      command: [
-        'git clone -- "$ORCA_SOURCE_BUNDLE" "$ORCA_PROJECT_ROOT"',
-        'git -C "$ORCA_PROJECT_ROOT" fetch "$ORCA_SOURCE_BUNDLE" "+refs/remotes/origin/*:refs/remotes/origin/*"',
-        'git -C "$ORCA_PROJECT_ROOT" remote set-url origin "$ORCA_PROJECT_URL"',
-        'rm -f "$ORCA_SOURCE_BUNDLE"'
-      ].join(' && ')
-    })
-    if (uploaded.statusCode !== 0) {
-      throw new Error('The guest could not restore the local Git checkout.')
-    }
-  } finally {
-    rmSync(scratch, { recursive: true, force: true })
   }
 }
 

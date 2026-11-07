@@ -1,6 +1,7 @@
 import { createApi, readConfig, deleteIfPresent } from './api.mjs'
 import { createThread, runThreadLifecycle } from './thread.mjs'
 import { createTemplate, parseResources } from './template.mjs'
+import { prepareProject, projectUrl } from './project.mjs'
 
 const usage = `Usage:
   node config/scripts/freestyle-cloud/cli.mjs pool-list
@@ -8,6 +9,8 @@ const usage = `Usage:
   node config/scripts/freestyle-cloud/cli.mjs pool-delete POOL_ID
   node config/scripts/freestyle-cloud/cli.mjs template-create BASE_ID CPU MEMORY_MIB STORAGE_MIB
   node config/scripts/freestyle-cloud/cli.mjs doctor
+  node /path/to/orca/config/scripts/freestyle-cloud/cli.mjs project-prepare
+    Run project-prepare from the Git project checkout.
 Orca runs create, suspend, resume and destroy through the workspace recipe.`
 
 const [mode, ...args] = process.argv.slice(2)
@@ -52,6 +55,14 @@ async function run(api, config, signal) {
     case 'template-create': {
       const [base, ...sizes] = args
       return createTemplate(api, config.FREESTYLE_ORCA_POOL_ID, base, parseResources(sizes), signal)
+    }
+    case 'project-prepare': {
+      const poolId = config.FREESTYLE_ORCA_POOL_ID
+      const baseId = config.FREESTYLE_ORCA_SNAPSHOT_ID
+      if (!poolId || !baseId) {
+        throw new Error('Set FREESTYLE_ORCA_POOL_ID and FREESTYLE_ORCA_SNAPSHOT_ID.')
+      }
+      return prepareProject(api, poolId, baseId, projectUrl({}), signal)
     }
     case 'doctor': {
       const poolId = config.FREESTYLE_ORCA_POOL_ID

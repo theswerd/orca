@@ -33,6 +33,9 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
       assert.deepEqual(body, { cpu: 4, memory: 4096, storage: 16384 })
       return { status: 201, body: { id: 'pool-demo' } }
     }
+    if (method === 'GET' && url.startsWith('/v5/snapshots/orca-project-')) {
+      return { body: { id: 'sh-project' } }
+    }
     if (method === 'POST' && url === '/v5/vms') {
       assert.equal(body.poolId, 'pool-demo')
       if (body.virtiofs) {
@@ -40,7 +43,7 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
         assert.equal(body.bsvmm, 'nightly')
         assert.deepEqual(body.source.resources, { cpu: 2, memory: 2048, storage: 4096 })
       } else {
-        assert.equal(body.snapshotId, 'sh-prepared')
+        assert.equal(body.snapshotId, 'sh-project')
         assert.equal(body.tls.rules[0].domain, `${body.slug}.style.dev`)
       }
       assert.ok([...vms.values()].every((vm) => vm.slug !== body.slug))
@@ -73,10 +76,7 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
     }
     if (action === 'exec-await') {
       assert.equal(headers['x-freestyle-background-after-secs'], '1')
-      if (body.command.startsWith('git clone')) {
-        assert.equal(body.env.ORCA_PROJECT_URL, 'https://github.com/example/project.git')
-        return { body: { statusCode: 0 } }
-      }
+      assert.equal(body.env.ORCA_PROJECT_URL, 'https://github.com/example/project.git')
       assert.equal(body.env.ORCA_PAIRING_ADDRESS, `wss://${vm.slug}.style.dev`)
       if (id === 'vm-3') {
         return { body: { statusCode: 1 } }

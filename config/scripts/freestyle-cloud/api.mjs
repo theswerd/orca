@@ -82,7 +82,7 @@ export function createApi(config) {
 
 async function pollBackgroundRequest(request, requestId, signal) {
   do {
-    await delay(1000, undefined, { signal })
+    await delay(250, undefined, { signal })
     const result = await request('GET', `background-requests/${encodeURIComponent(requestId)}`, {
       signal
     })
@@ -121,4 +121,13 @@ export async function deleteIfPresent(api, path, options) {
       throw error
     }
   }
+}
+
+export function execGuest(api, vmId, signal, { command, env }) {
+  return api('POST', `${vmPath(vmId)}/exec-await`, {
+    signal,
+    timeoutMs: 210_000,
+    background: true,
+    body: { timeoutMs: 180_000, command, env }
+  })
 }
