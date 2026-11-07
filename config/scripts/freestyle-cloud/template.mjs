@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { vmPath, waitForVm } from './api.mjs'
+import { deleteIfPresent, vmPath, waitForVm } from './api.mjs'
 
 export function parseResources(sizes) {
   if (
@@ -43,10 +43,9 @@ export async function createTemplate(api, poolId, base, resources, signal) {
       timeoutMs: 120_000,
       body: { slug, displayName: 'Orca Cloud template' }
     })
-    console.error(`Captured snapshot ${snapshot.snapshotId}. Stopping bootstrap ${vm.id}.`)
-    await api('POST', `${vmPath(vm.id)}/stop`, { signal, body: {}, timeoutMs: 120_000 })
-    await waitForVm(api, vm.id, 'stopped', signal)
-    return { poolId, snapshotId: snapshot.snapshotId, bootstrapVmId: vm.id }
+    console.error(`Captured snapshot ${snapshot.snapshotId}. Removing bootstrap ${vm.id}.`)
+    await deleteIfPresent(api, vmPath(vm.id), { signal, timeoutMs: 120_000 })
+    return { poolId, snapshotId: snapshot.snapshotId }
   } catch (error) {
     console.error(`Inspect bootstrap VM ${vm.id} and snapshot slug ${slug} before retrying.`)
     throw error

@@ -40,20 +40,21 @@ export function createApi(config) {
   return async function request(
     method,
     path,
-    { body, headers, signal, timeoutMs = 30_000, background = false } = {}
+    { body, bytes, headers, signal, timeoutMs = 30_000, background = false } = {}
   ) {
     const timeout = AbortSignal.timeout(timeoutMs)
     const requestSignal = signal ? AbortSignal.any([timeout, signal]) : timeout
-    const payload = body === undefined ? {} : { body: JSON.stringify(body) }
+    const payload = bytes ?? (body === undefined ? undefined : JSON.stringify(body))
     const response = await fetch(new URL(`/v5/${path}`, origin), {
       method,
       headers: {
         Authorization: `Bearer ${config.FREESTYLE_API_KEY}`,
+        ...(bytes ? { 'Content-Type': 'application/octet-stream' } : {}),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(background ? { 'X-Freestyle-Background-After-Secs': '1' } : {}),
         ...headers
       },
-      ...payload,
+      ...(payload === undefined ? {} : { body: payload }),
       redirect: 'error',
       signal: requestSignal
     })

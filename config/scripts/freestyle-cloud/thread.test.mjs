@@ -73,7 +73,10 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
     }
     if (action === 'exec-await') {
       assert.equal(headers['x-freestyle-background-after-secs'], '1')
-      assert.equal(body.env.ORCA_PROJECT_URL, 'https://github.com/example/project.git')
+      if (body.command.startsWith('git clone')) {
+        assert.equal(body.env.ORCA_PROJECT_URL, 'https://github.com/example/project.git')
+        return { body: { statusCode: 0 } }
+      }
       assert.equal(body.env.ORCA_PAIRING_ADDRESS, `wss://${vm.slug}.style.dev`)
       if (id === 'vm-3') {
         return { body: { statusCode: 1 } }
@@ -85,10 +88,6 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
       vm.captured = true
       return { body: { snapshotId: 'sh-new-template' } }
     }
-    if (action === 'stop') {
-      assert.equal(vm.captured, true)
-      vm.state = 'stopped'
-    }
     if (action === 'pause') {
       vm.state = 'paused'
     }
@@ -96,6 +95,9 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
       vm.state = 'running'
     }
     if (method === 'DELETE') {
+      if (vm.prepared) {
+        assert.equal(vm.captured, true)
+      }
       vms.delete(id)
       return { status: 204 }
     }
@@ -144,8 +146,7 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
   const template = await run('template-create', '', undefined, ['staged-base', '2', '2048', '4096'])
   assert.deepEqual(template.result, {
     poolId: 'pool-demo',
-    snapshotId: 'sh-new-template',
-    bootstrapVmId: 'vm-4'
+    snapshotId: 'sh-new-template'
   })
-  assert.equal(vms.get('vm-4').state, 'stopped')
+  assert.equal(vms.has('vm-4'), false)
 })

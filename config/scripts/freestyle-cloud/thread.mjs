@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, openAsBlob, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { text } from 'node:stream/consumers'
 import { deleteIfPresent, vmPath, waitForVm } from './api.mjs'
 
 const ORCA_PORT = 7331
 const PROJECT_ROOT = '/var/tmp/orca-project'
+const GUEST_BUNDLE_PATH = '/var/tmp/orca-source.bundle'
 const PROVIDER = 'freestyle-resource-pool'
 
 function threadSlug(instanceId) {
@@ -130,30 +134,30 @@ export async function createThread(api, config, signal) {
     })
     vmId = requireId(vm.id, 'vm', 'created VM ID')
     await waitForVm(api, vmId, 'running', signal)
+    await checkoutRepository(api, vmId, repoUrl, signal)
     console.error(`Starting Orca in ${vmId}.`)
-    const result = await api('POST', `${vmPath(vmId)}/exec-await`, {
-      signal,
-      timeoutMs: 210_000,
-      background: true,
-      body: {
-        timeoutMs: 180_000,
-        env: {
-          GIT_TERMINAL_PROMPT: '0',
-          ORCA_PROJECT_URL: repoUrl,
-          ORCA_PROJECT_ROOT: PROJECT_ROOT,
-          ORCA_PAIRING_ADDRESS: `wss://${domain}`,
-          ORCA_PORT: String(ORCA_PORT)
-        },
-        command: [
-          'command -v orca-ide >/dev/null',
-          'git clone --filter=blob:none -- "$ORCA_PROJECT_URL" "$ORCA_PROJECT_ROOT" >&2',
-          'exec orca-ide serve --bind 0.0.0.0 --port "$ORCA_PORT" --project-root "$ORCA_PROJECT_ROOT" --pairing-address "$ORCA_PAIRING_ADDRESS" --recipe-json 2>"$HOME/.orca-cloud-serve.log"'
-        ].join(' && ')
-      }
+    const result = await execGuest(api, vmId, signal, {
+      env: {
+        ORCA_PROJECT_ROOT: PROJECT_ROOT,
+        ORCA_PAIRING_ADDRESS: `wss://${domain}`,
+        ORCA_PORT: String(ORCA_PORT)
+      },
+      command: [
+        'set -eu',
+        'export DISPLAY=:97',
+        'setsid -f Xvfb "$DISPLAY" -nolisten tcp -screen 0 1280x800x24 </dev/null >/var/tmp/orca-xvfb.log 2>&1',
+        'for attempt in $(seq 1 50); do [ -S /tmp/.X11-unix/X97 ] && break; sleep 0.2; done',
+        '[ -S /tmp/.X11-unix/X97 ] || { cat /var/tmp/orca-xvfb.log >&2; exit 1; }',
+        'orca-ide serve --port "$ORCA_PORT" --project-root "$ORCA_PROJECT_ROOT" --pairing-address "$ORCA_PAIRING_ADDRESS" --recipe-json 2>"$HOME/.orca-cloud-serve.log" || { tail -20 "$HOME/.orca-cloud-serve.log" >&2; exit 1; }'
+      ].join('\n')
     })
     if (result.statusCode !== 0) {
+      const reason = result.stderr
+        ?.trim()
+        .replace(/orca:\/\/\S+/g, '[pairing link]')
+        .slice(-1800)
       throw new Error(
-        'Guest setup failed. Check orca-ide, Git and repo access in the prepared base.'
+        `Orca server could not start in the guest (exit ${result.statusCode}).${reason ? ` ${reason}` : ''}`
       )
     }
     return {
@@ -168,6 +172,67 @@ export async function createThread(api, config, signal) {
       )
     }
     throw error
+  }
+}
+
+async function execGuest(api, vmId, signal, { command, env }) {
+  return api('POST', `${vmPath(vmId)}/exec-await`, {
+    signal,
+    timeoutMs: 210_000,
+    background: true,
+    body: { timeoutMs: 180_000, command, env }
+  })
+}
+
+async function checkoutRepository(api, vmId, repoUrl, signal) {
+  const env = {
+    GIT_TERMINAL_PROMPT: '0',
+    ORCA_PROJECT_URL: repoUrl,
+    ORCA_PROJECT_ROOT: PROJECT_ROOT,
+    ORCA_SOURCE_BUNDLE: GUEST_BUNDLE_PATH
+  }
+  const clone = await execGuest(api, vmId, signal, {
+    env,
+    command: 'git clone --filter=blob:none -- "$ORCA_PROJECT_URL" "$ORCA_PROJECT_ROOT"'
+  })
+  if (clone.statusCode === 0) {
+    return
+  }
+  if (clone.statusCode !== 128) {
+    throw new Error('Git could not clone the repository in the guest.')
+  }
+
+  console.error('The guest could not clone from the Git remote. Sending the local Git checkout.')
+  const scratch = mkdtempSync(join(tmpdir(), 'orca-cloud-git-'))
+  try {
+    const path = join(scratch, 'source.bundle')
+    const bundle = spawnSync(
+      'git',
+      ['bundle', 'create', path, 'HEAD', '--branches', '--tags', '--remotes=origin'],
+      { encoding: 'utf8', timeout: 120_000, windowsHide: true }
+    )
+    if (bundle.status !== 0) {
+      throw new Error('Could not bundle the local Git checkout.')
+    }
+    await api('PUT', `${vmPath(vmId)}/fs/write?path=${encodeURIComponent(GUEST_BUNDLE_PATH)}`, {
+      bytes: await openAsBlob(path),
+      signal,
+      timeoutMs: 180_000
+    })
+    const uploaded = await execGuest(api, vmId, signal, {
+      env,
+      command: [
+        'git clone -- "$ORCA_SOURCE_BUNDLE" "$ORCA_PROJECT_ROOT"',
+        'git -C "$ORCA_PROJECT_ROOT" fetch "$ORCA_SOURCE_BUNDLE" "+refs/remotes/origin/*:refs/remotes/origin/*"',
+        'git -C "$ORCA_PROJECT_ROOT" remote set-url origin "$ORCA_PROJECT_URL"',
+        'rm -f "$ORCA_SOURCE_BUNDLE"'
+      ].join(' && ')
+    })
+    if (uploaded.statusCode !== 0) {
+      throw new Error('The guest could not restore the local Git checkout.')
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
   }
 }
 
