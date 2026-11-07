@@ -45,10 +45,13 @@ function openFreestyleCloudThreadComposer(
   row: Extract<NewTabAgentMenuRow, { kind: 'chat' | 'cli' }>,
   prompt?: string
 ): Promise<boolean> | null {
+  if (!window.api?.ephemeralVm) {
+    return null
+  }
   const state = useAppStore.getState()
   const environmentId = runtimeEnvironmentIdOrLocalUnlessTwin(state, workspaceId)
   const environment = state.runtimeEnvironments.find((entry) => entry.id === environmentId)
-  if (environment?.source !== 'ephemeral-vm' || !window.api.ephemeralVm) {
+  if (environment?.source !== 'ephemeral-vm') {
     return null
   }
 

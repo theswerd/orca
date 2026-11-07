@@ -3,12 +3,14 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { text } from 'node:stream/consumers'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { fileURLToPath } from 'node:url'
 
 const cliPath = fileURLToPath(new URL('./cli.mjs', import.meta.url))
 
-test('each Orca thread gets an isolated pool member that survives sleep and wake', async (t) => {
+test('each Orca thread gets an isolated pool member that survives sleep and wake', async ({
+  onTestFinished
+}) => {
   const vms = new Map()
   let nextVm = 0
   const server = createServer(async (request, response) => {
@@ -20,12 +22,12 @@ test('each Orca thread gets an isolated pool member that survives sleep and wake
     } catch (error) {
       response.writeHead(500)
       response.end()
-      t.diagnostic(error.message)
+      console.error(error)
     }
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
-  t.after(() => server.close())
+  onTestFinished(() => server.close())
 
   function handle(method, url, headers, body) {
     if (method === 'POST' && url === '/v5/pools') {

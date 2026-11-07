@@ -21241,7 +21241,13 @@
       "clearSelection": "Clear agent selection",
       "startInTerminal": "Start {{value0}} in a terminal"
     },
+    "tabBar": {
+      "cloudThreadComposer": {
+        "openFailed": "Open the source project with Cloud VM enabled to start another cloud thread."
+      }
+    },
     "newWorkspace": {
+      "orcaCloudDetail": "A fresh VM for this worktree",
       "agentOptional": "Agent [Optional]",
       "createDescription": "Choose the project and workspace name. Select an agent if you want to start one.",
       "setupCheckFailed": "Could not check setup configuration. Try again.",

@@ -148,9 +148,9 @@ describe('registerEphemeralVmHandlers', () => {
   it('offers Orca Cloud in a Git project without an orca.yaml recipe', async () => {
     const repoPath = makeDir('orca-cloud-source-')
     registerEphemeralVmHandlers(makeStore(repoPath) as never)
-    const result = await handlers.get('ephemeralVm:listRecipes')!(null, {
-      repoId: 'repo-1'
-    } as never)
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The captured listRecipes handler accepts this repoId payload, which the mock registry types as never.
+    const request = { repoId: 'repo-1' } as never
+    const result = await handlers.get('ephemeralVm:listRecipes')!(null, request)
     expect(result).toMatchObject({
       status: 'ok',
       recipes: [{ id: 'freestyle-cloud-thread', name: 'Orca Cloud', checkoutMode: 'orca-worktree' }]
